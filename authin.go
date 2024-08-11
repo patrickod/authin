@@ -345,16 +345,21 @@ func (s *server) handleFinishLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	userStore, err := s.sessionStore.Get(r, userKey)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("error getting session: %v", err), http.StatusInternalServerError)
-		return
+	deleteKey := func(k string) error {
+		s, err := s.sessionStore.New(r, k)
+		if err != nil {
+			return err
+		}
+
+		s.Options.MaxAge = -1
+		return s.Save(r, w)
 	}
 
-	userStore.Options.MaxAge = -1
-	if ers := userStore.Save(r, w); ers != nil {
-		http.Error(w, fmt.Sprintf("error saving session: %v", ers), http.StatusInternalServerError)
-		return
+	for _, k := range []string{passkeyRegistrationKey, passkeyLoginKey, userKey} {
+		if err := deleteKey(k); err != nil {
+			http.Error(w, fmt.Sprintf("error deleting session: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
