@@ -19,17 +19,17 @@
 <form id="login" action="/login" method="post">
     <button style="display:inline-block" aria-label="Log in" type="submit" id="login-button">Log in</button>
 </form>
-{{ end }}
 
 <hr>
 
 <div>
     <form id="register" action="/register" method="post">
         <label for="username" aria-label="Username">Username</label>
-        <input type="text" name="username" placeholder="Username" required>
-        <button type="submit" id="register-button">Register</button>
+        <input type="text" name="username" placeholder="Username" required minlength="2">
+        <button type="submit" aria-label="Register" id="register-button">Register</button>
     </form>
 </div>
+{{ end }}
 
 
 <script src="/static/js/main.js"></script>
