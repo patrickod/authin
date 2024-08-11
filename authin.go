@@ -58,7 +58,6 @@ func initDB(path string) *sql.DB {
 	if _, err = db.Exec(`CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY,
 		username TEXT NOT NULL,
-		webauthn_credentials TEXT,
 		created TIMESTAMP DEFAULT CURRENT_TIMESTAMP	)`); err != nil {
 		log.Fatalf("failed to create table: %v", err)
 	}
@@ -83,11 +82,13 @@ func (s *server) ServeMux() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", s.handleIndex)
+
 	mux.HandleFunc("/register", s.handleBeginRegistration)
 	mux.HandleFunc("/register/finish", s.handleFinishRegistration)
 	mux.HandleFunc("/login", s.handleBeginLogin)
 	mux.HandleFunc("/login/finish", s.handleFinishLogin)
 	mux.HandleFunc("/logout", s.handleLogout)
+
 	mux.Handle("/whoami", s.auth(http.HandlerFunc(s.handleWhoami)))
 
 	// read out the `static` subtree to prevent double /static/ prefix

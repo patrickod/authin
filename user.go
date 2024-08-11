@@ -95,11 +95,7 @@ func (s *server) registerUser(username string) (*User, error) {
 		Username: username,
 	}
 
-	if _, err := s.db.Exec(`
-		INSERT INTO users (id, username, webauthn_credentials)
-		VALUES (?, ?, ?)
-	`, uid, username, "",
-	); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO users (id, username) VALUES (?, ?)`, uid, username); err != nil {
 		return nil, fmt.Errorf("failed to insert user: %v", err)
 	}
 
