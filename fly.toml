@@ -1,0 +1,31 @@
+# fly.toml app configuration file generated for authin on 2024-08-10T17:04:02-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'authin'
+primary_region = 'sjc'
+
+[build]
+[build.args]
+GO_VERSION = '1.22.5'
+
+[env]
+PORT = '8080'
+
+[http_service]
+internal_port = 8080
+force_https = true
+auto_stop_machines = 'stop'
+auto_start_machines = true
+min_machines_running = 0
+processes = ['app']
+
+[[vm]]
+memory = '512mb'
+cpu_kind = 'shared'
+cpus = 1
+
+[mounts]
+source = "authin_root"
+destination = "/data"

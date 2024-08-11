@@ -1,0 +1,37 @@
+{{ template "layout.html" . }}
+
+{{ define "content" }}
+<h2>WebAuthN demo</h2>
+
+<p>
+    {{ if .User }}
+    Welcome {{ .User.Username }}
+    {{ else}}
+    Login or register
+    {{ end }}
+</p>
+
+<form id="login" action="/login" method="post">
+    <button type="submit" id="login-button">Login</button>
+</form>
+
+{{ if .User }}
+<a href="/logout">
+    <button id="logout-button">Logout</button>
+</a>
+{{ end }}
+
+<hr>
+
+<div>
+    <form id="register" action="/register" method="post">
+        <label for="username" aria-label="Username">Username</label>
+        <input type="text" name="username" placeholder="Username" required>
+        <button type="submit" id="register-button">Register</button>
+    </form>
+</div>
+
+
+<script src="/static/js/main.js"></script>
+
+{{ end }}
