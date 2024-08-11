@@ -1,4 +1,4 @@
-# Aauthin
+# Authin
 
 Authin (pronounced "auth-een") is a small demonstration project of implementing WebAuthN authentication in Golang. In Irish, the "in" suffix is diminutive - "authin" thus means "little auth".
 
