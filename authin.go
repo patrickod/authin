@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net"
 	"path"
@@ -42,12 +43,19 @@ var (
 	indexTemplate = template.Must(
 		template.New("root").
 			ParseFS(templateFS, "templates/layout.html", "templates/index.html"))
+	homeTemplate = template.Must(
+		template.New("root").
+			ParseFS(templateFS, "templates/layout.html", "templates/home.html"))
 
 	// keys for session storage for auth stages
 	passkeyRegistrationKey = "passkey_registration"
 	passkeyLoginKey        = "passkey_login"
 	userKey                = "user"
 )
+
+type ContextKey string
+
+const UserContextKey ContextKey = "user"
 
 func initDB(path string) *sql.DB {
 	db, err := sql.Open("sqlite", path)
@@ -65,6 +73,7 @@ func initDB(path string) *sql.DB {
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS webauthn_credentials (
 		id BLOB PRIMARY KEY,
 		user_id INTEGER NOT NULL,
+		name TEXT,
 		credential TEXT NOT NULL,
 		created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`); err != nil {
 		log.Fatalf("failed to create table: %v", err)
@@ -89,7 +98,8 @@ func (s *server) ServeMux() http.Handler {
 	mux.HandleFunc("/login/finish", s.handleFinishLogin)
 	mux.HandleFunc("/logout", s.handleLogout)
 
-	mux.Handle("/whoami", s.auth(http.HandlerFunc(s.handleWhoami)))
+	mux.Handle("/whoami", s.auth(s.handleWhoami))
+	mux.Handle("/home", s.auth(s.handleHome))
 
 	// read out the `static` subtree to prevent double /static/ prefix
 	fsys, err := fs.Sub(staticFS, "static")
@@ -103,7 +113,7 @@ func (s *server) ServeMux() http.Handler {
 	return mux
 }
 
-func (s *server) auth(next http.Handler) http.Handler {
+func (s *server) auth(next func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		store, err := s.sessionStore.Get(r, userKey)
 		if err != nil {
@@ -117,32 +127,35 @@ func (s *server) auth(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		user, err := s.getUserByID(store.Values["user_id"].(int64))
+		if err != nil {
+			http.Error(w, "Failed to get user", http.StatusInternalServerError)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), UserContextKey, user)
+		next(w, r.WithContext(ctx))
 	})
 }
 
 func (s *server) handleWhoami(w http.ResponseWriter, r *http.Request) {
-	store, err := s.sessionStore.Get(r, userKey)
-	if err != nil {
-		http.Error(w, "Failed to get session", http.StatusInternalServerError)
-		return
-	}
-
-	userID, ok := store.Values["user_id"]
-	if !ok {
-		http.Error(w, "User not authenticated", http.StatusUnauthorized)
-		return
-	}
-
-	user, err := s.getUserByID(userID.(int64))
-	if err != nil {
-		http.Error(w, "Failed to get user", http.StatusInternalServerError)
-		return
-	}
-
+	user := r.Context().Value(UserContextKey).(*User)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(user); err != nil {
 		http.Error(w, "Failed to encode user", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *server) handleHome(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(UserContextKey).(*User)
+	b := new(bytes.Buffer)
+	if err := homeTemplate.ExecuteTemplate(b, "layout.html", struct{ User *User }{User: user}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := w.Write(b.Bytes()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 }
@@ -267,8 +280,8 @@ func (s *server) handleFinishRegistration(w http.ResponseWriter, r *http.Request
 
 	// clear the registrationStore now that we're finished
 	registrationStore.Options.MaxAge = -1
-	if ers := registrationStore.Save(r, w); ers != nil {
-		http.Error(w, fmt.Sprintf("error saving session: %v", ers), http.StatusInternalServerError)
+	if err := registrationStore.Save(r, w); err != nil {
+		http.Error(w, fmt.Sprintf("error saving session: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -276,7 +289,7 @@ func (s *server) handleFinishRegistration(w http.ResponseWriter, r *http.Request
 }
 
 func (s *server) handleBeginLogin(w http.ResponseWriter, r *http.Request) {
-	store, err := s.sessionStore.Get(r, passkeyLoginKey)
+	loginStore, err := s.sessionStore.Get(r, passkeyLoginKey)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error getting session: %v", err), http.StatusInternalServerError)
 		return
@@ -288,14 +301,14 @@ func (s *server) handleBeginLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store.Values["session"] = session
-	if err := store.Save(r, w); err != nil {
+	loginStore.Values["session"] = session
+	if err := loginStore.Save(r, w); err != nil {
 		http.Error(w, fmt.Sprintf("error saving session: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if ers := json.NewEncoder(w).Encode(options); ers != nil {
+	if err := json.NewEncoder(w).Encode(options); err != nil {
 		http.Error(w, fmt.Sprintf("error encoding response: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -307,31 +320,33 @@ func (s *server) handleFinishLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// retrieve the webauthn session data from the initial phase
 	loginStore, err := s.sessionStore.Get(r, passkeyLoginKey)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error retrieving session: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	session := loginStore.Values["session"].(*webauthn.SessionData)
 	if session == nil {
 		http.Error(w, "no session found - please restart login", http.StatusInternalServerError)
 		return
 	}
 
+	// validate that the necessary inputs are present in the request
 	parsedResponse, err := protocol.ParseCredentialRequestResponse(r)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error parsing response: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	// TODO: bind the credential return value; set a LastLogin timestamp?
 	user, _, err := s.webAuthn.ValidatePasskeyLogin(s.getUserByWebauthnID, *session, parsedResponse)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error finishing webauthn login: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// set the user session
+	// set the user session now that we have authenticated the user
 	userTyped := user.(*User)
 	userStore, err := s.sessionStore.Get(r, userKey)
 	if err != nil {
@@ -346,8 +361,8 @@ func (s *server) handleFinishLogin(w http.ResponseWriter, r *http.Request) {
 
 	// clear the login session
 	loginStore.Options.MaxAge = -1
-	if ers := loginStore.Save(r, w); ers != nil {
-		http.Error(w, fmt.Sprintf("error saving session: %v", ers), http.StatusInternalServerError)
+	if err := loginStore.Save(r, w); err != nil {
+		http.Error(w, fmt.Sprintf("error saving session: %v", err), http.StatusInternalServerError)
 		return
 	}
 

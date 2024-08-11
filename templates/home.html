@@ -1,0 +1,36 @@
+{{ template "layout.html" . }}
+
+{{ define "content" }}
+<h2>Manage credentials</h2>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Created</th>
+            <th>Delete</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ range .User.Credentials }}
+        <tr>
+            <td>{{ .Name }}</td>
+            <td>{{ .Created }}</td>
+            <td>
+                <form action="/credentials/delete" method="post">
+                    <input type="hidden" name="id" value="{{ .ID }}">
+                    <button type="submit" aria-label="Delete" id="delete-button">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
+
+<a aria-label="Log out" href="/logout">
+    <button style="display:inline-block" aria-label="Log out" id="logout-button">Log out</button>
+</a>
+
+<script src="/static/js/main.js"></script>
+
+{{ end }}

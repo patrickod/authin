@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	crand "crypto/rand"
+	"database/sql"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -20,11 +22,18 @@ func randomUserID() (int64, error) {
 	return id, nil
 }
 
+type UserCredential struct {
+	ID         string
+	Name       string
+	Created    time.Time
+	Credential *webauthn.Credential `json:"-"`
+}
+
 type User struct {
-	ID                       int64
-	Username                 string
-	Created                  time.Time
-	WebAuthnCredentialsSlice []webauthn.Credential `json:"-"`
+	ID          int64
+	Username    string
+	Created     time.Time
+	Credentials []UserCredential
 }
 
 func (u *User) WebAuthnID() []byte {
@@ -42,11 +51,15 @@ func (u *User) WebAuthnDisplayName() string {
 }
 
 func (u *User) WebAuthnCredentials() []webauthn.Credential {
-	return u.WebAuthnCredentialsSlice
+	creds := make([]webauthn.Credential, len(u.Credentials))
+	for _, cred := range u.Credentials {
+		creds = append(creds, *cred.Credential)
+	}
+	return creds
 }
 
 func (s *server) getUserByID(id int64) (*User, error) {
-	user := User{ID: id, WebAuthnCredentialsSlice: []webauthn.Credential{}}
+	user := User{ID: id, Credentials: []UserCredential{}}
 
 	row := s.db.QueryRow("SELECT username, created FROM users WHERE users.id = ?", id)
 	if err := row.Scan(&user.Username, &user.Created); err != nil {
@@ -54,21 +67,28 @@ func (s *server) getUserByID(id int64) (*User, error) {
 	}
 
 	// get credentials
-	rows, err := s.db.Query("SELECT credential FROM webauthn_credentials WHERE user_id = ?", id)
+	rows, err := s.db.Query("SELECT name, credential, created FROM webauthn_credentials WHERE user_id = ?", id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query webauthn credentials: %v", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var credJSON string
-		if err := rows.Scan(&credJSON); err != nil {
+		var name sql.NullString
+		var created time.Time
+		if err := rows.Scan(&name, &credJSON, &created); err != nil {
 			return nil, fmt.Errorf("failed to scan webauthn credentials: %v", err)
 		}
 		var credential webauthn.Credential
 		if err := json.Unmarshal([]byte(credJSON), &credential); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal webauthn credentials: %v", err)
 		}
-		user.WebAuthnCredentialsSlice = append(user.WebAuthnCredentialsSlice, credential)
+		user.Credentials = append(user.Credentials, UserCredential{
+			ID:         base64.URLEncoding.EncodeToString(credential.ID),
+			Credential: &credential,
+			Name:       name.String,
+			Created:    created,
+		})
 	}
 
 	return &user, nil
@@ -78,8 +98,8 @@ func (s *server) getUserByWebauthnID(keyID, userID []byte) (webauthn.User, error
 	i := int64(binary.BigEndian.Uint64(userID))
 	var dbUID int64
 	row := s.db.QueryRow("SELECT user_id FROM webauthn_credentials WHERE id = ? AND user_id = ?", keyID, i)
-	if ers := row.Scan(&dbUID); ers != nil {
-		return nil, fmt.Errorf("failed to identify user from credential: %v", ers)
+	if err := row.Scan(&dbUID); err != nil {
+		return nil, fmt.Errorf("failed to identify user from credential: %v", err)
 	}
 
 	return s.getUserByID(dbUID)
