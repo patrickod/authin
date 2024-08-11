@@ -3,11 +3,10 @@ package main
 import (
 	"bytes"
 	crand "crypto/rand"
-	"crypto/subtle"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 )
@@ -24,6 +23,7 @@ func randomUserID() (int64, error) {
 type User struct {
 	ID                       int64
 	Username                 string
+	Created                  time.Time
 	WebAuthnCredentialsSlice []webauthn.Credential `json:"-"`
 }
 
@@ -47,39 +47,42 @@ func (u *User) WebAuthnCredentials() []webauthn.Credential {
 
 func (s *server) getUserByID(id int64) (*User, error) {
 	user := User{ID: id, WebAuthnCredentialsSlice: []webauthn.Credential{}}
-	var webauthnCredentialsJSON string
 
-	row := s.db.QueryRow("SELECT username, webauthn_credentials FROM users WHERE id = ?", id)
-	if err := row.Scan(&user.Username, &webauthnCredentialsJSON); err != nil {
+	row := s.db.QueryRow("SELECT username, created FROM users WHERE users.id = ?", id)
+	if err := row.Scan(&user.Username, &user.Created); err != nil {
 		return nil, fmt.Errorf("failed to scan user: %v", err)
 	}
-	if webauthnCredentialsJSON != "" {
-		if err := json.Unmarshal([]byte(webauthnCredentialsJSON), &user.WebAuthnCredentialsSlice); err != nil {
+
+	// get credentials
+	rows, err := s.db.Query("SELECT credential FROM webauthn_credentials WHERE user_id = ?", id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query webauthn credentials: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var credJSON string
+		if err := rows.Scan(&credJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan webauthn credentials: %v", err)
+		}
+		var credential webauthn.Credential
+		if err := json.Unmarshal([]byte(credJSON), &credential); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal webauthn credentials: %v", err)
 		}
+		user.WebAuthnCredentialsSlice = append(user.WebAuthnCredentialsSlice, credential)
 	}
+
 	return &user, nil
 }
 
 func (s *server) getUserByWebauthnID(keyID, userID []byte) (webauthn.User, error) {
 	i := int64(binary.BigEndian.Uint64(userID))
-	user, err := s.getUserByID(i)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user by ID: %v", err)
+	var dbUID int64
+	row := s.db.QueryRow("SELECT user_id FROM webauthn_credentials WHERE id = ? AND user_id = ?", keyID, i)
+	if ers := row.Scan(&dbUID); ers != nil {
+		return nil, fmt.Errorf("failed to identify user from credential: %v", ers)
 	}
 
-	var validCredential bool
-	for i := range user.WebAuthnCredentialsSlice {
-		if subtle.ConstantTimeCompare(user.WebAuthnCredentialsSlice[i].ID, keyID) == 1 {
-			validCredential = true
-			break
-		}
-	}
-	if !validCredential {
-		return nil, fmt.Errorf("no credential found for user by ID %q", base64.URLEncoding.EncodeToString(keyID))
-	}
-
-	return user, nil
+	return s.getUserByID(dbUID)
 }
 
 func (s *server) registerUser(username string) (*User, error) {
@@ -104,23 +107,15 @@ func (s *server) registerUser(username string) (*User, error) {
 }
 
 func (s *server) addCredentialToUser(user *User, credential *webauthn.Credential) error {
-	user.WebAuthnCredentialsSlice = append(user.WebAuthnCredentialsSlice, *credential)
-	webauthnCredentialsJSON, err := json.Marshal(user.WebAuthnCredentialsSlice)
+	marshalled, err := json.Marshal(credential)
 	if err != nil {
-		return fmt.Errorf("failed to marshal webauthn credentials: %v", err)
+		return fmt.Errorf("failed to marshal credential: %v", err)
 	}
-
-	res, err := s.db.Exec(`UPDATE users SET webauthn_credentials = ? WHERE id = ?`, webauthnCredentialsJSON, user.ID)
-	if err != nil {
-		return fmt.Errorf("failed to update user: %v", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %v", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("no rows affected")
+	if _, err := s.db.Exec(`INSERT INTO webauthn_credentials (id, user_id, credential) VALUES (?, ?, ?)`,
+		credential.ID,
+		user.ID,
+		marshalled); err != nil {
+		return fmt.Errorf("failed to insert webauthn credential")
 	}
 	return nil
 }

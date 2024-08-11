@@ -13,6 +13,8 @@
             "args": [
                 "-ts-dir",
                 "./tmp",
+                "-state-dir",
+                "./tmp",
                 "-origin",
                 "passkey-demo.bear-justice.ts.net"
             ],

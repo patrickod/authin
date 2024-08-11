@@ -56,9 +56,18 @@ func initDB(path string) *sql.DB {
 	}
 
 	if _, err = db.Exec(`CREATE TABLE IF NOT EXISTS users (
-		id BLOB PRIMARY KEY,
+		id INTEGER PRIMARY KEY,
 		username TEXT NOT NULL,
-		webauthn_credentials TEXT)`); err != nil {
+		webauthn_credentials TEXT,
+		created TIMESTAMP DEFAULT CURRENT_TIMESTAMP	)`); err != nil {
+		log.Fatalf("failed to create table: %v", err)
+	}
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS webauthn_credentials (
+		id BLOB PRIMARY KEY,
+		user_id INTEGER NOT NULL,
+		credential TEXT NOT NULL,
+		created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`); err != nil {
 		log.Fatalf("failed to create table: %v", err)
 	}
 	return db
@@ -449,7 +458,7 @@ func main() {
 	cstore.Options.Secure = true
 	cstore.Options.HttpOnly = true
 	cstore.Options.SameSite = http.SameSiteStrictMode
-	cstore.Options.MaxAge = 86400
+	cstore.Options.MaxAge = int(24 * time.Hour.Seconds())
 
 	h := &server{db: db, webAuthn: webAuthn, sessionStore: cstore}
 
