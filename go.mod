@@ -5,7 +5,7 @@ go 1.22.5
 require (
 	github.com/go-webauthn/webauthn v0.11.0
 	github.com/gorilla/sessions v1.2.0
-	github.com/mattn/go-sqlite3 v1.14.22
+	modernc.org/sqlite v1.32.0
 	tailscale.com v1.70.0
 )
 
@@ -109,7 +109,6 @@ require (
 	modernc.org/libc v1.55.3 // indirect
 	modernc.org/mathutil v1.6.0 // indirect
 	modernc.org/memory v1.8.0 // indirect
-	modernc.org/sqlite v1.32.0 // indirect
 	modernc.org/strutil v1.2.0 // indirect
 	modernc.org/token v1.1.0 // indirect
 	nhooyr.io/websocket v1.8.10 // indirect
