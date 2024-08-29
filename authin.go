@@ -340,7 +340,7 @@ func (s *server) handleFinishLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO: bind the credential return value; set a LastLogin timestamp?
-	user, _, err := s.webAuthn.ValidatePasskeyLogin(s.getUserByWebauthnID, *session, parsedResponse)
+	user, _, err := s.webAuthn.ValidatePasskeyLogin(s.getUserByWebAuthnID, *session, parsedResponse)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error finishing webauthn login: %v", err), http.StatusInternalServerError)
 		return

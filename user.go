@@ -22,6 +22,7 @@ func randomUserID() (int64, error) {
 	return id, nil
 }
 
+// UserCredential represents a single WebAuthn credential belonging to a user.
 type UserCredential struct {
 	ID         string
 	Name       string
@@ -29,6 +30,7 @@ type UserCredential struct {
 	Credential *webauthn.Credential `json:"-"`
 }
 
+// User identity & associated WebAuthn credentials.
 type User struct {
 	ID          int64
 	Username    string
@@ -36,20 +38,24 @@ type User struct {
 	Credentials []UserCredential
 }
 
+// WebAuthnID returns the user's ID as a byte slice.
 func (u *User) WebAuthnID() []byte {
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.BigEndian, u.ID)
 	return buf.Bytes()
 }
 
+// WebAuthnName returns the user's username.
 func (u *User) WebAuthnName() string {
 	return u.Username
 }
 
+// WebAuthnDisplayName returns the user's username for display purposes.
 func (u *User) WebAuthnDisplayName() string {
 	return u.Username
 }
 
+// WebAuthnCredentials returns the user's WebAuthn credentials as a slice.
 func (u *User) WebAuthnCredentials() []webauthn.Credential {
 	creds := make([]webauthn.Credential, len(u.Credentials))
 	for _, cred := range u.Credentials {
@@ -58,6 +64,7 @@ func (u *User) WebAuthnCredentials() []webauthn.Credential {
 	return creds
 }
 
+// getUserByID retrieves a fully populated User record from the database by ID.
 func (s *server) getUserByID(id int64) (*User, error) {
 	user := User{ID: id, Credentials: []UserCredential{}}
 
@@ -90,21 +97,31 @@ func (s *server) getUserByID(id int64) (*User, error) {
 			Created:    created,
 		})
 	}
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("failed to iterate over webauthn credentials: %v", rows.Err())
+	}
 
 	return &user, nil
 }
 
-func (s *server) getUserByWebauthnID(keyID, userID []byte) (webauthn.User, error) {
+// getUserByWebAuthnID retrieves a webauthn.User compatible User record from the
+// database that belongs to the given WebAuthn credential. This hook is used by
+// the WebAuthn library during its authentication routine.
+func (s *server) getUserByWebAuthnID(keyID, userID []byte) (webauthn.User, error) {
 	i := int64(binary.BigEndian.Uint64(userID))
 	var dbUID int64
 	row := s.db.QueryRow("SELECT user_id FROM webauthn_credentials WHERE id = ? AND user_id = ?", keyID, i)
 	if err := row.Scan(&dbUID); err != nil {
 		return nil, fmt.Errorf("failed to identify user from credential: %v", err)
 	}
+	if err := row.Err(); err != nil {
+		return nil, fmt.Errorf("failed to query user from credential: %v", err)
+	}
 
 	return s.getUserByID(dbUID)
 }
 
+// registerUser creates a new user record in the database with the given username.
 func (s *server) registerUser(username string) (*User, error) {
 	uid, err := randomUserID()
 	if err != nil {
@@ -122,6 +139,7 @@ func (s *server) registerUser(username string) (*User, error) {
 	return user, nil
 }
 
+// addCredentialToUser adds a new WebAuthn credential to the given user record. This is used in the registration process.
 func (s *server) addCredentialToUser(user *User, credential *webauthn.Credential) error {
 	marshalled, err := json.Marshal(credential)
 	if err != nil {
