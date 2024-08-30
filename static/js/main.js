@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     data[key] = value
                 })
 
-                await fetch('/register', {
+                await fetch('/v1/register', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                         return navigator.credentials.create(r.options)
                     })
                     .then(credential => {
-                        return fetch('/register/finish', {
+                        return fetch('/v1/register/finish', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             submitButton.addEventListener('click', async function (event) {
                 event.preventDefault()
 
-                await fetch('/login')
+                await fetch('/v1/login')
                     .then(async (res) => {
                         let credentialRequestOptions = await res.json();
                         credentialRequestOptions.publicKey.challenge = bufferDecode(credentialRequestOptions.publicKey.challenge);
@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                         })
                     })
                     .then((assertion) => {
-                        return fetch('/login/finish', {
+                        return fetch('/v1/login/finish', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
