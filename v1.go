@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -225,7 +226,7 @@ func (v *v1) handleFinishLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO: bind the credential return value; set a LastLogin timestamp?
-	user, _, err := v.webAuthn.ValidatePasskeyLogin(v.s.getUserByWebAuthnID, *session, parsedResponse)
+	user, _, err := v.webAuthn.ValidatePasskeyLogin(v.getUserByWebAuthnID, *session, parsedResponse)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error finishing webauthn login: %v", err), http.StatusInternalServerError)
 		loginFailureCount.Inc()
@@ -257,4 +258,21 @@ func (v *v1) handleFinishLogin(w http.ResponseWriter, r *http.Request) {
 
 	loginSuccessCount.Inc()
 	io.WriteString(w, fmt.Sprintf("Welcome %q", userTyped.Username))
+}
+
+// getUserByWebAuthnID retrieves a webauthn.User compatible User record from the
+// database that belongs to the given WebAuthn credential. This hook is used by
+// the WebAuthn library during its authentication routine.
+func (v *v1) getUserByWebAuthnID(keyID, userID []byte) (webauthn.User, error) {
+	i := int64(binary.BigEndian.Uint64(userID))
+	var dbUID int64
+	row := v.s.db.QueryRow("SELECT user_id FROM webauthn_credentials WHERE id = ? AND user_id = ?", keyID, i)
+	if err := row.Scan(&dbUID); err != nil {
+		return nil, fmt.Errorf("failed to identify user from credential: %v", err)
+	}
+	if err := row.Err(); err != nil {
+		return nil, fmt.Errorf("failed to query user from credential: %v", err)
+	}
+
+	return v.s.getUserByID(dbUID)
 }

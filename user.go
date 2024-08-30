@@ -104,23 +104,6 @@ func (s *server) getUserByID(id int64) (*User, error) {
 	return &user, nil
 }
 
-// getUserByWebAuthnID retrieves a webauthn.User compatible User record from the
-// database that belongs to the given WebAuthn credential. This hook is used by
-// the WebAuthn library during its authentication routine.
-func (s *server) getUserByWebAuthnID(keyID, userID []byte) (webauthn.User, error) {
-	i := int64(binary.BigEndian.Uint64(userID))
-	var dbUID int64
-	row := s.db.QueryRow("SELECT user_id FROM webauthn_credentials WHERE id = ? AND user_id = ?", keyID, i)
-	if err := row.Scan(&dbUID); err != nil {
-		return nil, fmt.Errorf("failed to identify user from credential: %v", err)
-	}
-	if err := row.Err(); err != nil {
-		return nil, fmt.Errorf("failed to query user from credential: %v", err)
-	}
-
-	return s.getUserByID(dbUID)
-}
-
 // registerUser creates a new user record in the database with the given username.
 func (s *server) registerUser(username string) (*User, error) {
 	uid, err := randomUserID()
