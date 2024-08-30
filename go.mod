@@ -1,6 +1,6 @@
 module github.com/patrickod/authin
 
-go 1.23.0
+go 1.23
 
 require (
 	github.com/go-webauthn/webauthn v0.11.0
