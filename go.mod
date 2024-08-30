@@ -5,7 +5,7 @@ go 1.23
 require (
 	github.com/go-webauthn/webauthn v0.11.0
 	github.com/gorilla/sessions v1.2.0
-	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/prometheus/client_golang v1.19.1
 	modernc.org/sqlite v1.32.0
 	tailscale.com v1.72.1
 )
@@ -71,7 +71,6 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/prometheus-community/pro-bing v0.4.0 // indirect
-	github.com/prometheus/client_golang v1.19.1 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
@@ -113,5 +112,4 @@ require (
 	modernc.org/memory v1.8.0 // indirect
 	modernc.org/strutil v1.2.0 // indirect
 	modernc.org/token v1.1.0 // indirect
-	nhooyr.io/websocket v1.8.10 // indirect
 )

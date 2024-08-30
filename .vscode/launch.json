@@ -11,12 +11,11 @@
             "mode": "debug",
             "program": "${workspaceFolder}/.",
             "args": [
+                "-dev",
                 "-ts-dir",
                 "./tmp",
                 "-state-dir",
                 "./tmp",
-                "-origin",
-                "passkey-demo.bear-justice.ts.net"
             ],
         }
     ]
