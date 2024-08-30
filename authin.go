@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/gorilla/sessions"
+	"github.com/prometheus/client_golang/prometheus"
 	_ "modernc.org/sqlite"
 	"tailscale.com/tsnet"
 	"tailscale.com/tsweb"
@@ -77,6 +78,47 @@ func initDB(path string) *sql.DB {
 		log.Fatalf("failed to create table: %v", err)
 	}
 	return db
+}
+
+func registerMetrics(s *server) {
+	if err := prometheus.Register(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "authin_user_count",
+		Help: "Number of users in the system",
+	}, func() float64 {
+		var count int
+		if err := s.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+			log.Printf("failed to get user count: %v", err)
+			return 0
+		}
+		return float64(count)
+	})); err != nil {
+		log.Fatalf("failed to register user count metric: %v", err)
+	}
+
+	if err := prometheus.Register(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "authin_webauthn_credential_count",
+		Help: "Number of webauthn credentials in the system",
+	}, func() float64 {
+		var count int
+		if err := s.db.QueryRow("SELECT COUNT(*) FROM webauthn_credentials").Scan(&count); err != nil {
+			log.Printf("failed to get webauthn credential count: %v", err)
+			return 0
+		}
+		return float64(count)
+	})); err != nil {
+		log.Fatalf("failed to register webauthn credential count metric: %v", err)
+	}
+}
+
+// NewServer creates a new server with the given database and webauthn configuration.
+// It registers prometheus metrics for user and webauthn credential counts
+// before returning the server.
+func NewServer(db *sql.DB, webAuthn *webauthn.WebAuthn, sessionStore *sessions.CookieStore) *server {
+	s := &server{db: db, webAuthn: webAuthn, sessionStore: sessionStore}
+
+	registerMetrics(s)
+
+	return s
 }
 
 type server struct {
@@ -305,7 +347,7 @@ func main() {
 	cstore.Options.SameSite = http.SameSiteStrictMode
 	cstore.Options.MaxAge = int(24 * time.Hour.Seconds())
 
-	h := &server{db: db, webAuthn: webAuthn, sessionStore: cstore}
+	h := NewServer(db, webAuthn, cstore)
 
 	// run over tailscale in dev for TLS
 	if *dev {
